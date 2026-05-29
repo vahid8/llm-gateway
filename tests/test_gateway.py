@@ -1,0 +1,159 @@
+"""End-to-end tests for the gateway routes, with litellm calls stubbed."""
+from __future__ import annotations
+
+
+
+import app.routing as routing
+
+
+def _fake_completion(model: str, content: str = "hello") -> dict:
+    return {
+        "id": "chatcmpl-test",
+        "object": "chat.completion",
+        "created": 0,
+        "model": model,
+        "choices": [
+            {
+                "index": 0,
+                "message": {"role": "assistant", "content": content},
+                "finish_reason": "stop",
+            }
+        ],
+        "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+    }
+
+
+async def test_health(client):
+    resp = await client.get("/health")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "ok"
+    assert body["providers"]["openai"] is True
+
+
+async def test_chat_requires_auth(client):
+    resp = await client.post("/v1/chat/completions", json={"model": "gpt-4o-mini", "messages": []})
+    assert resp.status_code == 401
+
+
+async def test_models_list(client, api_key):
+    resp = await client.get("/v1/models", headers={"Authorization": f"Bearer {api_key}"})
+    assert resp.status_code == 200
+    ids = {m["id"] for m in resp.json()["data"]}
+    assert "gpt-4o-mini" in ids
+    assert any(i.startswith("claude") for i in ids)
+
+
+async def test_chat_completion_and_logging(client, api_key, monkeypatch):
+    async def fake_acomplete(request, model, timeout):
+        return _fake_completion(model)
+
+    monkeypatch.setattr(routing, "acomplete", fake_acomplete)
+    monkeypatch.setattr(routing, "cost_of", lambda m, p, c: 0.001)
+
+    resp = await client.post(
+        "/v1/chat/completions",
+        headers={"Authorization": f"Bearer {api_key}"},
+        json={"model": "gpt-4o-mini", "messages": [{"role": "user", "content": "hi"}]},
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["choices"][0]["message"]["content"] == "hello"
+    assert body["gateway"]["cost_usd"] == 0.001
+    assert body["gateway"]["attempts"] == 1
+
+    # The request should now appear in stats.
+    stats = await client.get("/api/stats", headers={"Authorization": "Bearer test-admin"})
+    assert stats.status_code == 200
+    assert stats.json()["totals"]["requests"] >= 1
+
+
+async def test_fallback_to_second_model(client, api_key, monkeypatch):
+    calls = []
+
+    async def fake_acomplete(request, model, timeout):
+        calls.append(model)
+        if model == "gpt-4o-mini":
+            raise RuntimeError("primary down")
+        return _fake_completion(model)
+
+    monkeypatch.setattr(routing, "acomplete", fake_acomplete)
+    monkeypatch.setattr(routing, "cost_of", lambda m, p, c: 0.0)
+
+    resp = await client.post(
+        "/v1/chat/completions",
+        headers={"Authorization": f"Bearer {api_key}"},
+        json={
+            "model": "gpt-4o-mini",
+            "messages": [{"role": "user", "content": "hi"}],
+            "fallback_models": ["gemini-1.5-flash"],
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["gateway"]["resolved_model"] == "gemini/gemini-1.5-flash"
+    assert calls == ["gpt-4o-mini", "gemini/gemini-1.5-flash"]
+
+
+async def test_all_candidates_fail(client, api_key, monkeypatch):
+    async def fake_acomplete(request, model, timeout):
+        raise RuntimeError("everything down")
+
+    monkeypatch.setattr(routing, "acomplete", fake_acomplete)
+
+    resp = await client.post(
+        "/v1/chat/completions",
+        headers={"Authorization": f"Bearer {api_key}"},
+        json={"model": "gpt-4o-mini", "messages": [{"role": "user", "content": "hi"}]},
+    )
+    assert resp.status_code == 502
+    assert resp.json()["error"]["type"] == "upstream_error"
+
+
+async def test_streaming(client, api_key, monkeypatch):
+    async def fake_astream(request, model, timeout):
+        yield {"choices": [{"index": 0, "delta": {"role": "assistant", "content": ""}}]}
+        yield {"choices": [{"index": 0, "delta": {"content": "hi"}}]}
+        yield {"choices": [], "usage": {"prompt_tokens": 3, "completion_tokens": 1, "total_tokens": 4}}
+
+    monkeypatch.setattr(routing, "astream", fake_astream)
+    monkeypatch.setattr(routing, "cost_of", lambda m, p, c: 0.0)
+
+    resp = await client.post(
+        "/v1/chat/completions",
+        headers={"Authorization": f"Bearer {api_key}"},
+        json={
+            "model": "gpt-4o-mini",
+            "messages": [{"role": "user", "content": "hi"}],
+            "stream": True,
+        },
+    )
+    assert resp.status_code == 200
+    assert "text/event-stream" in resp.headers["content-type"]
+    text = resp.text
+    assert "data: " in text
+    assert "[DONE]" in text
+    # The streamed content chunk made it through.
+    assert any('"content": "hi"' in line or '"content":"hi"' in line for line in text.splitlines())
+
+
+async def test_stats_requires_admin(client, api_key):
+    # A normal gateway key is not an admin key.
+    resp = await client.get("/api/stats", headers={"Authorization": f"Bearer {api_key}"})
+    assert resp.status_code == 403
+
+
+async def test_revoked_key_rejected(client, monkeypatch):
+    create = await client.post(
+        "/admin/keys", headers={"Authorization": "Bearer test-admin"}, json={"name": "temp"}
+    )
+    key = create.json()["api_key"]
+    key_id = create.json()["id"]
+
+    revoke = await client.delete(
+        f"/admin/keys/{key_id}", headers={"Authorization": "Bearer test-admin"}
+    )
+    assert revoke.status_code == 204
+
+    resp = await client.get("/v1/models", headers={"Authorization": f"Bearer {key}"})
+    assert resp.status_code == 401

@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>LLM Gateway — Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+  <style>
+    :root { --bg:#0f1117; --card:#181b24; --muted:#8b93a7; --fg:#e7e9ee; --accent:#6c8cff; --border:#262a36; }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background:var(--bg); color:var(--fg); }
+    header { display:flex; align-items:center; gap:12px; padding:16px 24px; border-bottom:1px solid var(--border); }
+    header h1 { font-size:18px; margin:0; font-weight:600; }
+    header .spacer { flex:1; }
+    input, select, button { background:var(--card); color:var(--fg); border:1px solid var(--border); border-radius:8px; padding:8px 10px; font-size:13px; }
+    button { cursor:pointer; }
+    button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+    main { padding:24px; max-width:1200px; margin:0 auto; }
+    .cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:14px; }
+    .card { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:16px; }
+    .card .label { color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.04em; }
+    .card .value { font-size:24px; font-weight:600; margin-top:6px; }
+    .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:14px; }
+    .panel { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:16px; }
+    .panel h2 { font-size:13px; color:var(--muted); margin:0 0 12px; text-transform:uppercase; letter-spacing:.04em; }
+    table { width:100%; border-collapse:collapse; font-size:13px; }
+    th, td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--border); white-space:nowrap; }
+    th { color:var(--muted); font-weight:500; }
+    .err { color:#ff6b6b; }
+    .ok { color:#4ade80; }
+    #notice { color:var(--muted); padding:40px; text-align:center; }
+    @media (max-width:760px){ .grid2{grid-template-columns:1fr;} }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>⚡ LLM Gateway</h1>
+    <div class="spacer"></div>
+    <select id="days">
+      <option value="1">24h</option>
+      <option value="7">7d</option>
+      <option value="30" selected>30d</option>
+      <option value="90">90d</option>
+    </select>
+    <input id="adminKey" type="password" placeholder="Admin API key" style="width:220px" />
+    <button class="primary" id="refresh">Load</button>
+  </header>
+  <main>
+    <div id="notice">Enter your admin API key and press Load.</div>
+    <div id="content" style="display:none">
+      <div class="cards" id="cards"></div>
+      <div class="grid2">
+        <div class="panel"><h2>Cost over time (USD)</h2><canvas id="costChart" height="140"></canvas></div>
+        <div class="panel"><h2>Cost by provider</h2><canvas id="providerChart" height="140"></canvas></div>
+      </div>
+      <div class="panel" style="margin-top:14px"><h2>By model</h2>
+        <table id="modelTable"><thead><tr><th>Model</th><th>Requests</th><th>Tokens</th><th>Cost (USD)</th></tr></thead><tbody></tbody></table>
+      </div>
+      <div class="panel" style="margin-top:14px"><h2>Recent requests</h2>
+        <table id="recentTable"><thead><tr><th>Time</th><th>Provider</th><th>Model</th><th>Tokens</th><th>Cost</th><th>Latency</th><th>Status</th></tr></thead><tbody></tbody></table>
+      </div>
+    </div>
+  </main>
+  <script src="/static/dashboard.js"></script>
+</body>
+</html>
