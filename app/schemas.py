@@ -11,9 +11,20 @@ from pydantic import BaseModel, Field
 
 
 class ChatMessage(BaseModel):
+    # ``content`` is a plain string, or a list of OpenAI content parts for
+    # multimodal input (e.g. ``{"type": "image_url", ...}``), or null for an
+    # assistant message that only makes tool calls.
     role: Literal["system", "user", "assistant", "tool"]
     content: str | list[dict[str, Any]] | None = None
     name: str | None = None
+    # Tool calling: an assistant message carries ``tool_calls``; a ``tool`` role
+    # message answering one carries the matching ``tool_call_id``. Declared
+    # explicitly (rather than relying on ``extra``) so multi-turn tool exchanges
+    # round-trip; ``extra="allow"`` keeps any other provider-specific fields.
+    tool_calls: list[dict[str, Any]] | None = None
+    tool_call_id: str | None = None
+
+    model_config = {"extra": "allow"}
 
 
 class ChatCompletionRequest(BaseModel):

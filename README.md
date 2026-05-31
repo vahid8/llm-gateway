@@ -12,6 +12,7 @@ the gateway, storage, auth, routing policy, and dashboard are the project's own.
 
 - **One OpenAI-compatible API** — `POST /v1/chat/completions`, `GET /v1/models`. Existing OpenAI clients work unchanged.
 - **Multi-provider** — OpenAI (`gpt-4o`…), Anthropic (`claude-…`), Gemini (`gemini-…`); bare model names are auto-routed.
+- **Tools & vision** — function/tool calling and multimodal image inputs pass through to any provider that supports them.
 - **Usage tracking** — every call logs provider, model, tokens, **USD cost**, latency, and status.
 - **Dashboard** — `/dashboard`: totals, cost-over-time, cost-by-provider, per-model table, recent requests.
 - **Streaming (SSE)** — full token streaming with usage captured for cost.
@@ -72,6 +73,32 @@ Open the **dashboard** at <http://localhost:8000/dashboard> and paste your `ADMI
 
 Per-request fallback: add `"fallback_models": ["gemini-1.5-flash"]` to a chat request;
 on failure the gateway retries, then tries each fallback in order.
+
+## Tools & vision
+
+The gateway is a transparent passthrough for OpenAI-style **tool/function calling**
+and **multimodal (image) inputs** — point a model that supports them at the
+endpoint and they just work:
+
+- Send `tools` / `tool_choice` (and optionally `parallel_tool_calls`); the
+  assistant's `tool_calls` come back unchanged. On the next turn, send the
+  assistant message with its `tool_calls` plus a `tool`-role message carrying the
+  matching `tool_call_id` — both round-trip intact.
+- Send `content` as a list of parts (`{"type":"text",...}`,
+  `{"type":"image_url",...}`) for vision.
+
+```python
+client.chat.completions.create(
+    model="gpt-4o",
+    messages=[{"role": "user", "content": [
+        {"type": "text", "text": "What's in this image?"},
+        {"type": "image_url", "image_url": {"url": "https://…/cat.png"}},
+    ]}],
+)
+```
+
+Only an allowlist of OpenAI params is forwarded to the provider; client-supplied
+credential/endpoint overrides (`api_base`, `api_key`, …) are always dropped.
 
 ## Rate limiting
 
@@ -169,15 +196,14 @@ client ──OpenAI format──> /v1/chat/completions
 
 ```bash
 uv sync
-uv run pytest          # 25 tests; litellm calls are stubbed (no network)
+uv run pytest          # 31 tests; litellm calls are stubbed (no network)
 uv run ruff check app tests
 ```
 
 ## Roadmap (post-v1)
 
-Tool/function calling & vision passthrough · Prometheus metrics ·
-embeddings (`/v1/embeddings`) · React dashboard · Redis-backed rate-limit &
-budget counters for strict multi-worker limits.
+Prometheus metrics · embeddings (`/v1/embeddings`) · React dashboard ·
+Redis-backed rate-limit & budget counters for strict multi-worker limits.
 
 ## License
 
