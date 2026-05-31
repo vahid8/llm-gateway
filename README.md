@@ -16,6 +16,7 @@ the gateway, storage, auth, routing policy, and dashboard are the project's own.
 - **Dashboard** — `/dashboard`: totals, cost-over-time, cost-by-provider, per-model table, recent requests.
 - **Streaming (SSE)** — full token streaming with usage captured for cost.
 - **Gateway API keys** — issue/revoke client keys (stored as SHA-256 hashes); provider keys stay server-side.
+- **Per-key budgets** — optional monthly USD spend cap per key (UTC calendar month); over budget returns 402.
 - **Retries & fallback** — transient errors retried; persistent failures fall back to the next model.
 - **Swappable storage** — SQLite by default, Postgres via one env var (SQLAlchemy async).
 
@@ -91,6 +92,26 @@ State is in-memory per process, so multi-worker deployments enforce roughly
 `limit × workers`; back it with Redis for a strict global limit (upgrade path,
 not built).
 
+## Budgets
+
+Per-key **monthly spend cap** in USD, enforced on `/v1/chat/completions`. The cap
+is a key's own `monthly_budget_usd` (set at creation) if present, otherwise the
+global `MONTHLY_BUDGET_USD`; `0` (from either) means unlimited. Month-to-date
+spend is the sum of the key's logged `cost_usd` since the start of the current
+**UTC calendar month**; once it reaches the cap the request is rejected with
+**402 Payment Required**.
+
+```bash
+# A key capped at $25/month, regardless of the global default:
+curl -s -X POST localhost:8000/admin/keys \
+  -H "Authorization: Bearer $ADMIN_API_KEY" -H "Content-Type: application/json" \
+  -d '{"name":"my-app","monthly_budget_usd":25}'
+```
+
+The cap is checked *before* the upstream call (the cost of the crossing request
+isn't known yet), so a key can overshoot by at most one request; for a strict
+cap, back spend tracking with Redis (same upgrade path as rate limiting).
+
 ## Configuration
 
 All via env / `.env` (see `.env.example`):
@@ -103,6 +124,7 @@ All via env / `.env` (see `.env.example`):
 | `REQUEST_TIMEOUT_SECONDS` | `120` | Upstream timeout |
 | `MAX_RETRIES` | `2` | Retries per model on transient errors |
 | `RATE_LIMIT_PER_MINUTE` | `0` | Default per-key req/min on `/v1/chat/completions` (0 = off) |
+| `MONTHLY_BUDGET_USD` | `0` | Default per-key monthly USD spend cap (0 = unlimited) |
 | `CORS_ORIGINS` | `*` | Comma-separated allowlist (lock down in prod) |
 | `MODEL_ALIASES` | `{}` | JSON map of friendly name → litellm model |
 
@@ -147,14 +169,15 @@ client ──OpenAI format──> /v1/chat/completions
 
 ```bash
 uv sync
-uv run pytest          # 20 tests; litellm calls are stubbed (no network)
+uv run pytest          # 25 tests; litellm calls are stubbed (no network)
 uv run ruff check app tests
 ```
 
 ## Roadmap (post-v1)
 
-Tool/function calling & vision passthrough · per-key budget enforcement ·
-Prometheus metrics · embeddings (`/v1/embeddings`) · React dashboard.
+Tool/function calling & vision passthrough · Prometheus metrics ·
+embeddings (`/v1/embeddings`) · React dashboard · Redis-backed rate-limit &
+budget counters for strict multi-worker limits.
 
 ## License
 

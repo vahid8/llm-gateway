@@ -45,6 +45,10 @@ class Settings(BaseSettings):
     # 0 disables rate limiting globally; a key's own rate_limit_per_min overrides this.
     rate_limit_per_minute: int = Field(default=0, ge=0)
 
+    # Default per-key monthly spend cap in USD (calendar month, UTC). 0 disables
+    # budget enforcement globally; a key's own monthly_budget_usd overrides this.
+    monthly_budget_usd: float = Field(default=0.0, ge=0)
+
     # CORS allowlist for the dashboard / browser clients. Comma-separated.
     cors_origins: str = "*"
 
