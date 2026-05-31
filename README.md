@@ -10,7 +10,7 @@ the gateway, storage, auth, routing policy, and dashboard are the project's own.
 
 ## Features
 
-- **One OpenAI-compatible API** — `POST /v1/chat/completions`, `GET /v1/models`. Existing OpenAI clients work unchanged.
+- **One OpenAI-compatible API** — `POST /v1/chat/completions`, `POST /v1/embeddings`, `GET /v1/models`. Existing OpenAI clients work unchanged.
 - **Multi-provider** — OpenAI (`gpt-4o`…), Anthropic (`claude-…`), Gemini (`gemini-…`); bare model names are auto-routed.
 - **Tools & vision** — function/tool calling and multimodal image inputs pass through to any provider that supports them.
 - **Usage tracking** — every call logs provider, model, tokens, **USD cost**, latency, and status.
@@ -160,6 +160,7 @@ All via env / `.env` (see `.env.example`):
 | Method | Path | Auth | Description |
 |---|---|---|---|
 | `POST` | `/v1/chat/completions` | gateway key | Chat completion (stream or not) |
+| `POST` | `/v1/embeddings` | gateway key | Embeddings (retries + fallback + cost) |
 | `GET` | `/v1/models` | gateway key | Models for configured providers |
 | `POST` | `/admin/keys` | admin | Create a gateway key (returned once) |
 | `GET` | `/admin/keys` | admin | List keys (prefixes only) |
@@ -196,14 +197,14 @@ client ──OpenAI format──> /v1/chat/completions
 
 ```bash
 uv sync
-uv run pytest          # 31 tests; litellm calls are stubbed (no network)
+uv run pytest          # 39 tests; litellm calls are stubbed (no network)
 uv run ruff check app tests
 ```
 
 ## Roadmap (post-v1)
 
-Prometheus metrics · embeddings (`/v1/embeddings`) · React dashboard ·
-Redis-backed rate-limit & budget counters for strict multi-worker limits.
+Prometheus metrics · React dashboard · Redis-backed rate-limit & budget
+counters for strict multi-worker limits.
 
 ## License
 

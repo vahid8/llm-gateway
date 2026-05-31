@@ -24,7 +24,7 @@ from litellm.exceptions import (
 )
 
 from app.config import Settings
-from app.schemas import ChatCompletionRequest
+from app.schemas import ChatCompletionRequest, EmbeddingRequest
 
 litellm.drop_params = True  # silently drop params a given provider doesn't support
 
@@ -53,6 +53,14 @@ _FORWARD_PARAMS = {
     "tools",
     "tool_choice",
     "parallel_tool_calls",
+    "user",
+}
+
+# Same idea for /v1/embeddings: only these client params reach litellm. ``input``
+# and ``model`` are set explicitly; credential/endpoint overrides never forward.
+_EMBED_FORWARD_PARAMS = {
+    "encoding_format",
+    "dimensions",
     "user",
 }
 
@@ -134,3 +142,20 @@ async def astream(
     response = await litellm.acompletion(**kwargs)
     async for chunk in response:
         yield chunk.model_dump()
+
+
+def _embedding_kwargs(request: EmbeddingRequest, model: str, timeout: float) -> dict:
+    raw = request.model_dump(exclude_none=True)
+    kwargs = {k: raw[k] for k in _EMBED_FORWARD_PARAMS if k in raw}
+    # Gateway-controlled fields — never taken from the client payload.
+    kwargs["model"] = model
+    kwargs["input"] = raw["input"]
+    kwargs["timeout"] = timeout
+    return kwargs
+
+
+async def aembed(request: EmbeddingRequest, model: str, timeout: float) -> dict:
+    """Embeddings. Returns an OpenAI-shaped response dict."""
+    kwargs = _embedding_kwargs(request, model, timeout)
+    resp = await litellm.aembedding(**kwargs)
+    return resp.model_dump()
