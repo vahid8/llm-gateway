@@ -85,28 +85,35 @@ async def test_embeddings_requires_auth(client):
 
 
 async def test_embeddings_logged_for_stats(client, api_key, monkeypatch):
-    monkeypatch.setattr(routing, "aembed", _fake_aembedding(usage_tokens=9))
-    monkeypatch.setattr(routing, "cost_of", lambda m, p, c: 0.0001)
+    # Unique token/cost values so the assertion is robust to rows other tests
+    # leave in the conftest's shared session DB.
+    monkeypatch.setattr(routing, "aembed", _fake_aembedding(usage_tokens=4242))
+    monkeypatch.setattr(routing, "cost_of", lambda m, p, c: 0.0424242)
 
-    await client.post(
+    resp = await client.post(
         "/v1/embeddings",
         headers={"Authorization": f"Bearer {api_key}"},
         json={"model": "text-embedding-3-small", "input": "hello"},
     )
+    assert resp.status_code == 200, resp.text
 
-    # The call wrote a RequestLog row with the embedding's tokens + cost.
+    # The call wrote exactly one RequestLog row, with the embedding's tokens +
+    # cost (completion_tokens == 0), discoverable by its unique cost value.
     from sqlalchemy import select
 
     from app.db import SessionLocal
     from app.models import RequestLog
 
     async with SessionLocal() as session:
-        rows = (await session.execute(select(RequestLog))).scalars().all()
-    embed_rows = [r for r in rows if r.model == "text-embedding-3-small"]
-    assert len(embed_rows) == 1
-    assert embed_rows[0].total_tokens == 9
-    assert embed_rows[0].cost_usd == 0.0001
-    assert embed_rows[0].completion_tokens == 0
+        rows = (
+            await session.execute(
+                select(RequestLog).where(RequestLog.cost_usd == 0.0424242)
+            )
+        ).scalars().all()
+    assert len(rows) == 1
+    assert rows[0].model == "text-embedding-3-small"
+    assert rows[0].total_tokens == 4242
+    assert rows[0].completion_tokens == 0
 
 
 async def test_embeddings_fallback_on_error(client, api_key, monkeypatch):

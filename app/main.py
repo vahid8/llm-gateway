@@ -13,7 +13,7 @@ from app.config import get_settings
 from app.db import init_db
 from app.engine import configure_keys
 from app.ratelimit import RateLimiter
-from app.routes import chat, health, keys, models, stats
+from app.routes import chat, embeddings, health, keys, models, stats
 
 STATIC_DIR = Path(__file__).parent / "static"
 
