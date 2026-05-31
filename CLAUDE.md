@@ -19,6 +19,8 @@ and retries + fallback. Built for OSS release and personal multi-provider use.
 ## Conventions / gotchas
 - **Model naming:** bare `claude-*`/`gemini-*` are normalized to `anthropic/…`/`gemini/…` for LiteLLM; `gpt-*`/`o*` pass through. Explicit `provider/model` and `MODEL_ALIASES` honored.
 - **Streaming fallback:** `open_stream()` resolves the provider (incl. fallback) and pulls the first chunk *before* the `StreamingResponse` is built, so total failures raise cleanly instead of mid-stream. Don't move that logic into the SSE generator.
+- **Rate limiting** (`app/ratelimit.py`): sliding-window per gateway key on `/v1/chat/completions`, enforced via the `enforce_rate_limit` dependency. State is **in-memory per-process** (`app.state.rate_limiter`), so multi-worker deploys get ≈ limit × workers — back with Redis for a strict global limit. Limit = key's `rate_limit_per_min` if set, else `RATE_LIMIT_PER_MINUTE`; `<= 0` means unlimited. 429s carry a `Retry-After` header.
+- **Post-release columns** (e.g. `api_keys.rate_limit_per_min`): `create_all` only makes missing *tables*, so `init_db` runs a best-effort `ALTER TABLE … ADD COLUMN` from `_ADDED_COLUMNS` in `app/db.py`. Add new columns there too until the schema moves to Alembic.
 - **`app/db.py` binds the engine to `DATABASE_URL` at import time** — tests must set the env var before importing the app (see `tests/conftest.py`).
 - **Tests:** run with `PYTHONPATH= uv run pytest` — a system ROS pytest plugin leaks in via `PYTHONPATH` otherwise. litellm calls are stubbed; no network.
 - Provider keys live only in `.env` server-side; never returned to clients.

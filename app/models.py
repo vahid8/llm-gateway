@@ -25,6 +25,9 @@ class ApiKey(Base):
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     # Optional monthly spend cap in USD; null means unlimited.
     monthly_budget_usd: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Optional per-key request cap per minute; null falls back to the global
+    # RATE_LIMIT_PER_MINUTE default. <= 0 (either source) means unlimited.
+    rate_limit_per_min: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 

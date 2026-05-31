@@ -22,6 +22,7 @@ router = APIRouter(prefix="/admin/keys", tags=["admin"], dependencies=[Depends(r
 class CreateKeyRequest(BaseModel):
     name: str
     monthly_budget_usd: float | None = None
+    rate_limit_per_min: int | None = None
 
 
 class KeyInfo(BaseModel):
@@ -30,6 +31,7 @@ class KeyInfo(BaseModel):
     key_prefix: str
     active: bool
     monthly_budget_usd: float | None
+    rate_limit_per_min: int | None
     created_at: datetime
 
 
@@ -47,6 +49,7 @@ async def create_key(
         key_hash=hash_key(raw),
         key_prefix=raw[:10],
         monthly_budget_usd=body.monthly_budget_usd,
+        rate_limit_per_min=body.rate_limit_per_min,
     )
     session.add(key)
     await session.commit()
@@ -57,6 +60,7 @@ async def create_key(
         key_prefix=key.key_prefix,
         active=key.active,
         monthly_budget_usd=key.monthly_budget_usd,
+        rate_limit_per_min=key.rate_limit_per_min,
         created_at=key.created_at,
         api_key=raw,
     )
