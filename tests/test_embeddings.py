@@ -85,8 +85,11 @@ async def test_embeddings_requires_auth(client):
 
 
 async def test_embeddings_logged_for_stats(client, api_key, monkeypatch):
-    # Unique token/cost values so the assertion is robust to rows other tests
-    # leave in the conftest's shared session DB.
+    # Verify logging via the admin /api/stats endpoint through the *same* client,
+    # rather than reaching into the global SessionLocal — another test
+    # (test_budget) reloads app modules against a different DB, so global module
+    # state isn't a reliable handle on what this app instance wrote.
+    # Unique token/cost values make the assertion robust to other rows.
     monkeypatch.setattr(routing, "aembed", _fake_aembedding(usage_tokens=4242))
     monkeypatch.setattr(routing, "cost_of", lambda m, p, c: 0.0424242)
 
@@ -97,23 +100,17 @@ async def test_embeddings_logged_for_stats(client, api_key, monkeypatch):
     )
     assert resp.status_code == 200, resp.text
 
-    # The call wrote exactly one RequestLog row, with the embedding's tokens +
-    # cost (completion_tokens == 0), discoverable by its unique cost value.
-    from sqlalchemy import select
-
-    from app.db import SessionLocal
-    from app.models import RequestLog
-
-    async with SessionLocal() as session:
-        rows = (
-            await session.execute(
-                select(RequestLog).where(RequestLog.cost_usd == 0.0424242)
-            )
-        ).scalars().all()
-    assert len(rows) == 1
-    assert rows[0].model == "text-embedding-3-small"
-    assert rows[0].total_tokens == 4242
-    assert rows[0].completion_tokens == 0
+    stats = await client.get(
+        "/api/stats?days=1", headers={"Authorization": "Bearer test-admin"}
+    )
+    assert stats.status_code == 200, stats.text
+    recent = stats.json()["recent"]
+    # Find this call by its unique token count; embeddings log completion=0, so
+    # total_tokens == prompt_tokens == 4242 and the stats row reflects it.
+    mine = [r for r in recent if r["tokens"] == 4242]
+    assert len(mine) == 1, recent
+    assert mine[0]["model"] == "text-embedding-3-small"
+    assert mine[0]["cost_usd"] == round(0.0424242, 6)
 
 
 async def test_embeddings_fallback_on_error(client, api_key, monkeypatch):
