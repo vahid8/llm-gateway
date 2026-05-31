@@ -197,7 +197,7 @@ client ──OpenAI format──> /v1/chat/completions
 
 ```bash
 uv sync
-uv run pytest          # 39 tests; litellm calls are stubbed (no network)
+uv run pytest          # 38 tests; litellm calls are stubbed (no network)
 uv run ruff check app tests
 ```
 
