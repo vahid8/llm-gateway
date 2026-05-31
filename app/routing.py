@@ -13,9 +13,17 @@ from collections.abc import AsyncIterator
 
 from app.config import Settings
 from app.db import SessionLocal
-from app.engine import acomplete, astream, cost_of, is_retryable, normalize_model, provider_of
+from app.engine import (
+    acomplete,
+    aembed,
+    astream,
+    cost_of,
+    is_retryable,
+    normalize_model,
+    provider_of,
+)
 from app.models import RequestLog
-from app.schemas import ChatCompletionRequest
+from app.schemas import ChatCompletionRequest, EmbeddingRequest
 
 
 class UpstreamError(Exception):
@@ -203,3 +211,72 @@ async def stream_body(
         status="ok",
         attempts=handle.attempts,
     )
+
+
+# --- Embeddings ----------------------------------------------------------
+async def run_embed(
+    request: EmbeddingRequest,
+    settings: Settings,
+    aliases: dict[str, str],
+    api_key_id: int,
+) -> dict:
+    """Embeddings with the same retry + fallback + logging policy as completions.
+
+    Embedding usage reports only prompt tokens (no completion), so completion
+    cost is zero; ``cost_of`` handles that. Logged to ``RequestLog`` like any
+    other request, so it shows up in /api/stats unchanged.
+    """
+    attempts = 0
+    last_exc: Exception | None = None
+
+    for raw_model in _candidates(request):
+        model = normalize_model(raw_model, aliases)
+        for attempt in range(settings.max_retries + 1):
+            attempts += 1
+            start = time.perf_counter()
+            try:
+                resp = await aembed(request, model, settings.request_timeout_seconds)
+            except Exception as exc:  # noqa: BLE001 — classified below
+                last_exc = exc
+                if is_retryable(exc) and attempt < settings.max_retries:
+                    continue
+                break  # try next candidate model
+
+            latency_ms = int((time.perf_counter() - start) * 1000)
+            pt, ct, tt = _usage_fields(resp.get("usage"))
+            provider = provider_of(model)
+            cost = cost_of(model, pt, ct)
+            await _log(
+                api_key_id=api_key_id,
+                provider=provider,
+                model=model,
+                requested_model=request.model,
+                prompt_tokens=pt,
+                completion_tokens=ct,
+                total_tokens=tt,
+                cost_usd=cost,
+                latency_ms=latency_ms,
+                streamed=False,
+                status="ok",
+                attempts=attempts,
+            )
+            resp["gateway"] = {
+                "provider": provider,
+                "resolved_model": model,
+                "cost_usd": cost,
+                "latency_ms": latency_ms,
+                "attempts": attempts,
+            }
+            return resp
+
+    message = str(last_exc) if last_exc else "all candidates failed"
+    await _log(
+        api_key_id=api_key_id,
+        provider=provider_of(normalize_model(request.model, aliases)),
+        model=normalize_model(request.model, aliases),
+        requested_model=request.model,
+        status="error",
+        attempts=attempts,
+        error=message[:2000],
+    )
+    raise UpstreamError(message, _status_of(last_exc) if last_exc else 502)

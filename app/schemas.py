@@ -70,6 +70,20 @@ class ChatCompletionResponse(BaseModel):
     gateway: dict[str, Any] | None = None
 
 
+class EmbeddingRequest(BaseModel):
+    model: str
+    # OpenAI accepts a string, a list of strings, or pre-tokenized int arrays.
+    input: str | list[str] | list[int] | list[list[int]]
+    encoding_format: Literal["float", "base64"] | None = None
+    dimensions: int | None = None
+    user: str | None = None
+
+    # Gateway extension: ordered fallback models tried on upstream failure.
+    fallback_models: list[str] | None = Field(default=None)
+
+    model_config = {"extra": "allow"}  # forward unknown params to the provider
+
+
 class ModelInfo(BaseModel):
     id: str
     object: str = "model"

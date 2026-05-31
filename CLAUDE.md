@@ -11,9 +11,9 @@ and retries + fallback. Built for OSS release and personal multi-provider use.
 - **Dashboard:** single static page (`app/static/`, Chart.js via CDN) served at `/dashboard`. No frontend build. React is the documented upgrade path, not built yet.
 
 ## Layout
-- `app/engine.py` — LiteLLM wrapper: `normalize_model`, `provider_of`, `cost_of`, `acomplete`, `astream`.
-- `app/routing.py` — retries + fallback + cost calc + `RequestLog` writes (opens its own session via `SessionLocal`, so streaming logs after the response).
-- `app/routes/` — `chat`, `models`, `keys` (admin), `stats` (admin), `health`.
+- `app/engine.py` — LiteLLM wrapper: `normalize_model`, `provider_of`, `cost_of`, `acomplete`, `astream`, `aembed`.
+- `app/routing.py` — retries + fallback + cost calc + `RequestLog` writes (opens its own session via `SessionLocal`, so streaming logs after the response). `run_complete`/`open_stream`/`run_embed` share the candidate/retry/fallback policy.
+- `app/routes/` — `chat`, `embeddings`, `models`, `keys` (admin), `stats` (admin), `health`. `/v1/embeddings` reuses the full `enforce_budget` gate chain; embedding logs (completion_tokens=0) flow into `/api/stats` unchanged.
 - `app/auth.py` — gateway keys (SHA-256 hashed) + admin key.
 
 ## Conventions / gotchas
