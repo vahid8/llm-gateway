@@ -41,6 +41,10 @@ class Settings(BaseSettings):
     request_timeout_seconds: float = 120.0
     max_retries: int = Field(default=2, ge=0)
 
+    # Default per-key request rate limit (requests/minute on /v1/chat/completions).
+    # 0 disables rate limiting globally; a key's own rate_limit_per_min overrides this.
+    rate_limit_per_minute: int = Field(default=0, ge=0)
+
     # CORS allowlist for the dashboard / browser clients. Comma-separated.
     cors_origins: str = "*"
 

@@ -12,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from app.config import get_settings
 from app.db import init_db
 from app.engine import configure_keys
+from app.ratelimit import RateLimiter
 from app.routes import chat, health, keys, models, stats
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -34,6 +35,7 @@ def create_app() -> FastAPI:
         "with cost + latency tracking.",
         lifespan=lifespan,
     )
+    app.state.rate_limiter = RateLimiter()
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origin_list,

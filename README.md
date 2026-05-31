@@ -72,6 +72,25 @@ Open the **dashboard** at <http://localhost:8000/dashboard> and paste your `ADMI
 Per-request fallback: add `"fallback_models": ["gemini-1.5-flash"]` to a chat request;
 on failure the gateway retries, then tries each fallback in order.
 
+## Rate limiting
+
+Per-key, sliding-window over the last 60 seconds, enforced on
+`/v1/chat/completions`. The limit is a key's own `rate_limit_per_min` (set at
+creation) if present, otherwise the global `RATE_LIMIT_PER_MINUTE`; `0` (from
+either) means unlimited. Over the limit returns **429** with a `Retry-After`
+header.
+
+```bash
+# A key capped at 60 requests/minute, regardless of the global default:
+curl -s -X POST localhost:8000/admin/keys \
+  -H "Authorization: Bearer $ADMIN_API_KEY" -H "Content-Type: application/json" \
+  -d '{"name":"my-app","rate_limit_per_min":60}'
+```
+
+State is in-memory per process, so multi-worker deployments enforce roughly
+`limit × workers`; back it with Redis for a strict global limit (upgrade path,
+not built).
+
 ## Configuration
 
 All via env / `.env` (see `.env.example`):
@@ -83,6 +102,7 @@ All via env / `.env` (see `.env.example`):
 | `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `GEMINI_API_KEY` | — | Provider creds (only configured ones are enabled) |
 | `REQUEST_TIMEOUT_SECONDS` | `120` | Upstream timeout |
 | `MAX_RETRIES` | `2` | Retries per model on transient errors |
+| `RATE_LIMIT_PER_MINUTE` | `0` | Default per-key req/min on `/v1/chat/completions` (0 = off) |
 | `CORS_ORIGINS` | `*` | Comma-separated allowlist (lock down in prod) |
 | `MODEL_ALIASES` | `{}` | JSON map of friendly name → litellm model |
 
@@ -127,14 +147,14 @@ client ──OpenAI format──> /v1/chat/completions
 
 ```bash
 uv sync
-uv run pytest          # 14 tests; litellm calls are stubbed (no network)
+uv run pytest          # 20 tests; litellm calls are stubbed (no network)
 uv run ruff check app tests
 ```
 
 ## Roadmap (post-v1)
 
-Tool/function calling & vision passthrough · per-key budget enforcement · rate
-limiting · Prometheus metrics · embeddings (`/v1/embeddings`) · React dashboard.
+Tool/function calling & vision passthrough · per-key budget enforcement ·
+Prometheus metrics · embeddings (`/v1/embeddings`) · React dashboard.
 
 ## License
 
