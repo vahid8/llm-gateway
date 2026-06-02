@@ -139,6 +139,17 @@ The cap is checked *before* the upstream call (the cost of the crossing request
 isn't known yet), so a key can overshoot by at most one request; for a strict
 cap, back spend tracking with Redis (same upgrade path as rate limiting).
 
+Limits can be changed later without re-issuing the key — `PATCH /admin/keys/{id}`
+updates only the fields you send (`name`, `monthly_budget_usd`, `rate_limit_per_min`,
+`active`); send an explicit `null` to clear a limit back to the global default:
+
+```bash
+# Raise this key's monthly cap to $100; leave its rate limit untouched:
+curl -s -X PATCH localhost:8000/admin/keys/3 \
+  -H "Authorization: Bearer $ADMIN_API_KEY" -H "Content-Type: application/json" \
+  -d '{"monthly_budget_usd":100}'
+```
+
 ## Configuration
 
 All via env / `.env` (see `.env.example`):
@@ -164,6 +175,7 @@ All via env / `.env` (see `.env.example`):
 | `GET` | `/v1/models` | gateway key | Models for configured providers |
 | `POST` | `/admin/keys` | admin | Create a gateway key (returned once) |
 | `GET` | `/admin/keys` | admin | List keys (prefixes only) |
+| `PATCH` | `/admin/keys/{id}` | admin | Update name / budget / rate-limit / active (partial) |
 | `DELETE` | `/admin/keys/{id}` | admin | Revoke a key |
 | `GET` | `/api/stats?days=N` | admin | Usage aggregates (dashboard data) |
 | `GET` | `/health` | none | Liveness + configured providers |
@@ -197,7 +209,7 @@ client ──OpenAI format──> /v1/chat/completions
 
 ```bash
 uv sync
-uv run pytest          # 38 tests; litellm calls are stubbed (no network)
+uv run pytest          # 44 tests; litellm calls are stubbed (no network)
 uv run ruff check app tests
 ```
 

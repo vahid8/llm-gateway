@@ -157,3 +157,71 @@ async def test_revoked_key_rejected(client, monkeypatch):
 
     resp = await client.get("/v1/models", headers={"Authorization": f"Bearer {key}"})
     assert resp.status_code == 401
+
+
+_ADMIN = {"Authorization": "Bearer test-admin"}
+
+
+async def test_patch_key_requires_admin(client, api_key):
+    # A normal gateway key cannot update keys.
+    resp = await client.patch("/admin/keys/1", headers={"Authorization": f"Bearer {api_key}"},
+                              json={"monthly_budget_usd": 5})
+    assert resp.status_code == 403
+
+
+async def test_patch_key_updates_limits(client):
+    create = await client.post(
+        "/admin/keys", headers=_ADMIN,
+        json={"name": "patchme", "monthly_budget_usd": 10, "rate_limit_per_min": 30},
+    )
+    key_id = create.json()["id"]
+
+    resp = await client.patch(
+        f"/admin/keys/{key_id}", headers=_ADMIN,
+        json={"monthly_budget_usd": 50, "name": "renamed"},
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["monthly_budget_usd"] == 50
+    assert body["name"] == "renamed"
+    # Untouched field is preserved.
+    assert body["rate_limit_per_min"] == 30
+
+
+async def test_patch_key_clears_limit_with_null(client):
+    create = await client.post(
+        "/admin/keys", headers=_ADMIN, json={"name": "clearme", "monthly_budget_usd": 10}
+    )
+    key_id = create.json()["id"]
+
+    resp = await client.patch(
+        f"/admin/keys/{key_id}", headers=_ADMIN, json={"monthly_budget_usd": None}
+    )
+    assert resp.status_code == 200
+    assert resp.json()["monthly_budget_usd"] is None
+
+
+async def test_patch_key_can_reactivate(client):
+    create = await client.post("/admin/keys", headers=_ADMIN, json={"name": "revived"})
+    key = create.json()["api_key"]
+    key_id = create.json()["id"]
+
+    await client.delete(f"/admin/keys/{key_id}", headers=_ADMIN)
+    assert (await client.get("/v1/models", headers={"Authorization": f"Bearer {key}"})).status_code == 401
+
+    resp = await client.patch(f"/admin/keys/{key_id}", headers=_ADMIN, json={"active": True})
+    assert resp.status_code == 200
+    assert resp.json()["active"] is True
+    assert (await client.get("/v1/models", headers={"Authorization": f"Bearer {key}"})).status_code == 200
+
+
+async def test_patch_key_404(client):
+    resp = await client.patch("/admin/keys/999999", headers=_ADMIN, json={"name": "x"})
+    assert resp.status_code == 404
+
+
+async def test_patch_key_empty_body_rejected(client):
+    create = await client.post("/admin/keys", headers=_ADMIN, json={"name": "noop"})
+    key_id = create.json()["id"]
+    resp = await client.patch(f"/admin/keys/{key_id}", headers=_ADMIN, json={})
+    assert resp.status_code == 400
