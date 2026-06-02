@@ -25,6 +25,17 @@ class CreateKeyRequest(BaseModel):
     rate_limit_per_min: int | None = None
 
 
+class UpdateKeyRequest(BaseModel):
+    """Partial update. Only fields present in the request body are changed;
+    send an explicit ``null`` to clear a limit (i.e. fall back to the global
+    default / unlimited). Omitting a field leaves it untouched."""
+
+    name: str | None = None
+    monthly_budget_usd: float | None = None
+    rate_limit_per_min: int | None = None
+    active: bool | None = None
+
+
 class KeyInfo(BaseModel):
     id: int
     name: str
@@ -70,6 +81,23 @@ async def create_key(
 async def list_keys(session: AsyncSession = Depends(get_session)) -> list[ApiKey]:
     result = await session.execute(select(ApiKey).order_by(ApiKey.id.desc()))
     return list(result.scalars().all())
+
+
+@router.patch("/{key_id}", response_model=KeyInfo)
+async def update_key(
+    key_id: int, body: UpdateKeyRequest, session: AsyncSession = Depends(get_session)
+) -> ApiKey:
+    key = await session.get(ApiKey, key_id)
+    if key is None:
+        raise HTTPException(status_code=404, detail="Key not found.")
+    changes = body.model_dump(exclude_unset=True)
+    if not changes:
+        raise HTTPException(status_code=400, detail="No fields to update.")
+    for field, value in changes.items():
+        setattr(key, field, value)
+    await session.commit()
+    await session.refresh(key)
+    return key
 
 
 @router.delete("/{key_id}", status_code=status.HTTP_204_NO_CONTENT)

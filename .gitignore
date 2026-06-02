@@ -9,6 +9,10 @@ wheels/
 # Virtual environments
 .venv
 
+# Tooling caches
+.pytest_cache/
+.ruff_cache/
+
 # Local secrets & data
 .env
 *.db
