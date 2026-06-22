@@ -17,3 +17,6 @@ wheels/
 .env
 *.db
 gateway.db
+# Docker-secret source files (the dir is kept via secrets/.gitignore)
+secrets/*
+!secrets/.gitignore

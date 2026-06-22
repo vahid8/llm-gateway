@@ -7,8 +7,9 @@ from __future__ import annotations
 
 import json
 from functools import lru_cache
+from pathlib import Path
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -26,11 +27,26 @@ class Settings(BaseSettings):
     openai_api_key: str | None = None
     anthropic_api_key: str | None = None
     gemini_api_key: str | None = None
+    # Doubleword: high-throughput, OpenAI-compatible inference cloud for open
+    # models (Qwen, GLM, …). Not a litellm-native provider — routed via the
+    # openai adapter against doubleword_base_url (see app.engine).
+    doubleword_api_key: str | None = None
+
+    # Docker-secrets / `*_FILE` convention: when one of these points at a file
+    # (e.g. /run/secrets/doubleword_key, or a path under ~/.secrets for local
+    # dev), the key is read from that file and OVERRIDES the inline `*_API_KEY`
+    # env var — so secrets are mounted as files and never appear in the
+    # container environment or `docker inspect`.
+    openai_api_key_file: str | None = None
+    anthropic_api_key_file: str | None = None
+    gemini_api_key_file: str | None = None
+    doubleword_api_key_file: str | None = None
 
     # Provider base URLs (override for Azure/proxies/self-hosted).
     openai_base_url: str = "https://api.openai.com/v1"
     anthropic_base_url: str = "https://api.anthropic.com/v1"
     gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta"
+    doubleword_base_url: str = "https://api.doubleword.ai/v1"
 
     anthropic_version: str = "2023-06-01"
 
@@ -55,6 +71,26 @@ class Settings(BaseSettings):
     # Optional JSON map of client-facing aliases -> litellm model names, e.g.
     # MODEL_ALIASES='{"fast":"gemini/gemini-1.5-flash","smart":"anthropic/claude-sonnet-4-20250514"}'
     model_aliases: str = "{}"
+
+    @model_validator(mode="after")
+    def _load_key_files(self) -> Settings:
+        """Read any `*_api_key_file` into the matching `*_api_key`.
+
+        A file path wins over an inline key because the file (a Docker secret at
+        /run/secrets/… in prod, or ~/.secrets/… in local dev) is the source of
+        truth; the inline env var is only the fallback. Missing/empty files are
+        ignored so a provider stays simply unavailable rather than erroring.
+        """
+        for name in ("openai", "anthropic", "gemini", "doubleword"):
+            path = getattr(self, f"{name}_api_key_file")
+            if not path:
+                continue
+            p = Path(path).expanduser()
+            if p.is_file():
+                value = p.read_text(encoding="utf-8").strip()
+                if value:
+                    setattr(self, f"{name}_api_key", value)
+        return self
 
     @property
     def cors_origin_list(self) -> list[str]:

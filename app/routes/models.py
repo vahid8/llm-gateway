@@ -20,6 +20,9 @@ _CATALOG: dict[str, list[str]] = {
         "claude-3-5-haiku-20241022",
     ],
     "gemini": ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-1.5-pro", "gemini-1.5-flash"],
+    # Doubleword model ids carry the provider prefix so clients call them as-is;
+    # any other Doubleword-hosted id (e.g. a GLM build) also works via the prefix.
+    "doubleword": ["doubleword/Qwen/Qwen3-VL-235B-A22B-Instruct-FP8"],
 }
 
 
@@ -30,6 +33,7 @@ async def list_models(_: ApiKey = Depends(require_api_key)) -> ModelList:
         "openai": bool(settings.openai_api_key),
         "anthropic": bool(settings.anthropic_api_key),
         "gemini": bool(settings.gemini_api_key),
+        "doubleword": bool(settings.doubleword_api_key),
     }
     data: list[ModelInfo] = []
     for provider, models in _CATALOG.items():

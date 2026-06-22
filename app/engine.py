@@ -65,6 +65,14 @@ _EMBED_FORWARD_PARAMS = {
 }
 
 
+# Doubleword is an OpenAI-compatible endpoint that litellm has no native
+# provider for. We route ``doubleword/<id>`` through litellm's openai adapter
+# with the endpoint + key injected per call (never via env, so it can't collide
+# with a real OPENAI_API_KEY). Populated from Settings in ``configure_keys``.
+DOUBLEWORD_PREFIX = "doubleword/"
+_doubleword: dict[str, str] = {}
+
+
 def configure_keys(settings: Settings) -> None:
     """Expose provider keys to litellm via the env vars it reads."""
     if settings.openai_api_key:
@@ -73,6 +81,10 @@ def configure_keys(settings: Settings) -> None:
         os.environ.setdefault("ANTHROPIC_API_KEY", settings.anthropic_api_key)
     if settings.gemini_api_key:
         os.environ.setdefault("GEMINI_API_KEY", settings.gemini_api_key)
+    _doubleword.clear()
+    if settings.doubleword_api_key:
+        _doubleword["api_base"] = settings.doubleword_base_url
+        _doubleword["api_key"] = settings.doubleword_api_key
 
 
 def normalize_model(model: str, aliases: dict[str, str]) -> str:
@@ -88,7 +100,23 @@ def normalize_model(model: str, aliases: dict[str, str]) -> str:
     return model  # gpt-*, o*, and anything else default to openai/native
 
 
+def _resolve_litellm_model(model: str) -> tuple[str, dict]:
+    """Map a gateway model name to ``(litellm_model, extra_kwargs)``.
+
+    ``doubleword/<id>`` is sent through litellm's openai adapter against
+    Doubleword's OpenAI-compatible endpoint, with the server-side api_base/api_key
+    injected here (never from the client). ``<id>`` may itself contain slashes
+    (e.g. ``Qwen/Qwen3-VL-235B-A22B-Instruct-FP8``). Anything else is unchanged.
+    """
+    if model.startswith(DOUBLEWORD_PREFIX):
+        rest = model[len(DOUBLEWORD_PREFIX):]
+        return f"openai/{rest}", dict(_doubleword)
+    return model, {}
+
+
 def provider_of(normalized_model: str) -> str:
+    if normalized_model.startswith(DOUBLEWORD_PREFIX):
+        return "doubleword"
     try:
         return litellm.get_llm_provider(normalized_model)[1]
     except Exception:
@@ -114,8 +142,12 @@ def is_retryable(exc: Exception) -> bool:
 def _litellm_kwargs(request: ChatCompletionRequest, model: str, timeout: float) -> dict:
     raw = request.model_dump(exclude_none=True)
     kwargs = {k: raw[k] for k in _FORWARD_PARAMS if k in raw}
-    # Gateway-controlled fields — never taken from the client payload.
-    kwargs["model"] = model
+    litellm_model, extra = _resolve_litellm_model(model)
+    # Gateway-controlled fields — never taken from the client payload. ``extra``
+    # carries server-side endpoint/credentials for OpenAI-compatible providers and
+    # is applied after the client params so a client can't override it.
+    kwargs.update(extra)
+    kwargs["model"] = litellm_model
     kwargs["messages"] = raw["messages"]
     kwargs["timeout"] = timeout
     return kwargs
@@ -147,8 +179,11 @@ async def astream(
 def _embedding_kwargs(request: EmbeddingRequest, model: str, timeout: float) -> dict:
     raw = request.model_dump(exclude_none=True)
     kwargs = {k: raw[k] for k in _EMBED_FORWARD_PARAMS if k in raw}
-    # Gateway-controlled fields — never taken from the client payload.
-    kwargs["model"] = model
+    litellm_model, extra = _resolve_litellm_model(model)
+    # Gateway-controlled fields — never taken from the client payload. ``extra``
+    # carries server-side endpoint/credentials and is applied after client params.
+    kwargs.update(extra)
+    kwargs["model"] = litellm_model
     kwargs["input"] = raw["input"]
     kwargs["timeout"] = timeout
     return kwargs

@@ -8,6 +8,11 @@ services:
     environment:
       # Default to a persisted SQLite file inside the named volume.
       DATABASE_URL: ${DATABASE_URL:-sqlite+aiosqlite:////data/gateway.db}
+      # Read the Doubleword key from the mounted Docker secret (a file), not an
+      # env var — so it never shows up in `docker inspect` / the process env.
+      DOUBLEWORD_API_KEY_FILE: /run/secrets/doubleword_key
+    secrets:
+      - doubleword_key
     volumes:
       - gateway_data:/data
     restart: unless-stopped
@@ -32,3 +37,11 @@ services:
 volumes:
   gateway_data:
   pg_data:
+
+secrets:
+  # Source of truth is a file on the host. Point DOUBLEWORD_KEY_FILE at it
+  # (e.g. /home/vahid/.secrets/doubleword.key in your local .env); defaults to
+  # ./secrets/doubleword.key for a clean clone. Mounted read-only at
+  # /run/secrets/doubleword_key inside the container.
+  doubleword_key:
+    file: ${DOUBLEWORD_KEY_FILE:-./secrets/doubleword.key}

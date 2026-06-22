@@ -17,5 +17,6 @@ async def health() -> dict:
             "openai": bool(settings.openai_api_key),
             "anthropic": bool(settings.anthropic_api_key),
             "gemini": bool(settings.gemini_api_key),
+            "doubleword": bool(settings.doubleword_api_key),
         },
     }
