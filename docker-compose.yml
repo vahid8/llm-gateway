@@ -8,11 +8,22 @@ services:
     environment:
       # Default to a persisted SQLite file inside the named volume.
       DATABASE_URL: ${DATABASE_URL:-sqlite+aiosqlite:////data/gateway.db}
-      # Read the Doubleword key from the mounted Docker secret (a file), not an
-      # env var — so it never shows up in `docker inspect` / the process env.
+      # Read keys from mounted Docker secrets (files), not env vars — so they
+      # never show up in `docker inspect` / the process env. The Doubleword key
+      # is wired by default; to mount the others the same way (instead of the
+      # inline keys in .env), uncomment them here AND in the `secrets:` blocks
+      # below, then drop the matching *_API_KEY line from .env.
       DOUBLEWORD_API_KEY_FILE: /run/secrets/doubleword_key
+      # ADMIN_API_KEY_FILE: /run/secrets/admin_key
+      # OPENAI_API_KEY_FILE: /run/secrets/openai_key
+      # ANTHROPIC_API_KEY_FILE: /run/secrets/anthropic_key
+      # GEMINI_API_KEY_FILE: /run/secrets/gemini_key
     secrets:
       - doubleword_key
+      # - admin_key
+      # - openai_key
+      # - anthropic_key
+      # - gemini_key
     volumes:
       - gateway_data:/data
     restart: unless-stopped
@@ -39,9 +50,19 @@ volumes:
   pg_data:
 
 secrets:
-  # Source of truth is a file on the host. Point DOUBLEWORD_KEY_FILE at it
-  # (e.g. /home/vahid/.secrets/doubleword.key in your local .env); defaults to
-  # ./secrets/doubleword.key for a clean clone. Mounted read-only at
-  # /run/secrets/doubleword_key inside the container.
+  # Source of truth is a file on the host. Point <NAME>_KEY_FILE at it (e.g.
+  # /home/you/.secrets/<name>.key in your local .env); each defaults to
+  # ./secrets/<name>.key for a clean clone. Mounted read-only at
+  # /run/secrets/<name>_key inside the container. Only enable the keys you use —
+  # an active secret's file must exist at `up` time — by uncommenting the
+  # matching pair in the service above plus its entry here.
   doubleword_key:
     file: ${DOUBLEWORD_KEY_FILE:-./secrets/doubleword.key}
+  # admin_key:
+  #   file: ${ADMIN_KEY_FILE:-./secrets/admin.key}
+  # openai_key:
+  #   file: ${OPENAI_KEY_FILE:-./secrets/openai.key}
+  # anthropic_key:
+  #   file: ${ANTHROPIC_KEY_FILE:-./secrets/anthropic.key}
+  # gemini_key:
+  #   file: ${GEMINI_KEY_FILE:-./secrets/gemini.key}

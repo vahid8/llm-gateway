@@ -51,7 +51,11 @@ class Settings(BaseSettings):
     anthropic_version: str = "2023-06-01"
 
     # Admin key for managing gateway keys and viewing the dashboard/stats.
+    # `admin_api_key_file` follows the same `*_FILE` convention as the provider
+    # keys above, so the admin key can be mounted as a Docker secret too rather
+    # than living inline in the container environment.
     admin_api_key: str | None = None
+    admin_api_key_file: str | None = None
 
     # Reliability defaults.
     request_timeout_seconds: float = 120.0
@@ -76,12 +80,13 @@ class Settings(BaseSettings):
     def _load_key_files(self) -> Settings:
         """Read any `*_api_key_file` into the matching `*_api_key`.
 
-        A file path wins over an inline key because the file (a Docker secret at
-        /run/secrets/… in prod, or ~/.secrets/… in local dev) is the source of
-        truth; the inline env var is only the fallback. Missing/empty files are
-        ignored so a provider stays simply unavailable rather than erroring.
+        Covers the provider keys and the admin key. A file path wins over an
+        inline key because the file (a Docker secret at /run/secrets/… in prod,
+        or ~/.secrets/… in local dev) is the source of truth; the inline env var
+        is only the fallback. Missing/empty files are ignored so the key stays
+        simply unset rather than erroring.
         """
-        for name in ("openai", "anthropic", "gemini", "doubleword"):
+        for name in ("openai", "anthropic", "gemini", "doubleword", "admin"):
             path = getattr(self, f"{name}_api_key_file")
             if not path:
                 continue
