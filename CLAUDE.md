@@ -25,4 +25,4 @@ and retries + fallback. Built for OSS release and personal multi-provider use.
 - **`app/db.py` binds the engine to `DATABASE_URL` at import time** — tests must set the env var before importing the app (see `tests/conftest.py`).
 - **Tests:** run with `PYTHONPATH= uv run pytest` — a system ROS pytest plugin leaks in via `PYTHONPATH` otherwise. litellm calls are stubbed; no network.
 - **`PATCH /admin/keys/{id}`** is a partial update: the handler uses `body.model_dump(exclude_unset=True)`, so an **omitted** field is left untouched while an explicit `null` **clears** the limit (reverts to the global default). Empty body → 400. This is why `UpdateKeyRequest` fields all default to `None` but omission and `null` mean different things.
-- Provider keys live only in `.env` server-side; never returned to clients.
+- Provider keys (and the admin key) live server-side only; never returned to clients. Prefer the `*_API_KEY_FILE` convention (`config.py` `_load_key_files`) so they mount as Docker secrets and stay out of the container env / `docker inspect`; the inline `*_API_KEY` is only the fallback. `admin_api_key_file` works the same way.

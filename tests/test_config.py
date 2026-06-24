@@ -33,3 +33,14 @@ def test_empty_key_file_does_not_clobber(tmp_path):
         anthropic_api_key_file=str(secret),
     )
     assert settings.anthropic_api_key == "sk-inline"
+
+
+def test_admin_key_file_overrides_inline_key(tmp_path):
+    secret = tmp_path / "admin.key"
+    secret.write_text("admin-from-file\n")  # trailing newline must be stripped
+    settings = Settings(
+        _env_file=None,
+        admin_api_key="admin-inline-should-lose",
+        admin_api_key_file=str(secret),
+    )
+    assert settings.admin_api_key == "admin-from-file"
