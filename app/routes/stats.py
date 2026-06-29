@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import require_admin
 from app.db import get_session
-from app.models import RequestLog
+from app.models import ApiKey, RequestLog
 
 router = APIRouter(prefix="/api", tags=["stats"], dependencies=[Depends(require_admin)])
 
@@ -81,6 +81,34 @@ async def stats(
     by_provider = await grouped(RequestLog.provider)
     by_model = await grouped(RequestLog.model)
 
+    # Per-key spend — which gateway key (system/user) consumed the most.
+    # Outer join so logs with a deleted/unknown api_key_id still surface.
+    key_rows = (
+        await session.execute(
+            select(
+                RequestLog.api_key_id,
+                ApiKey.name,
+                func.count(RequestLog.id),
+                func.coalesce(func.sum(RequestLog.cost_usd), 0.0),
+                func.coalesce(func.sum(RequestLog.total_tokens), 0),
+            )
+            .join(ApiKey, ApiKey.id == RequestLog.api_key_id, isouter=True)
+            .where(RequestLog.created_at >= since)
+            .group_by(RequestLog.api_key_id, ApiKey.name)
+            .order_by(func.sum(RequestLog.cost_usd).desc())
+        )
+    ).all()
+    by_key = [
+        {
+            "key_id": kid,
+            "name": name or "(unknown)",
+            "requests": c,
+            "cost_usd": round(cost, 6),
+            "tokens": tok,
+        }
+        for kid, name, c, cost, tok in key_rows
+    ]
+
     # Daily timeseries
     day = func.date(RequestLog.created_at)
     ts_rows = (
@@ -132,6 +160,7 @@ async def stats(
         },
         "by_provider": by_provider,
         "by_model": by_model,
+        "by_key": by_key,
         "timeseries": timeseries,
         "recent": recent,
     }

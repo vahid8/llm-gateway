@@ -68,6 +68,34 @@ async def test_chat_completion_and_logging(client, api_key, monkeypatch):
     assert stats.json()["totals"]["requests"] >= 1
 
 
+async def test_stats_by_key_attributes_spend(client, api_key, monkeypatch):
+    """by_key surfaces which gateway key consumed the most, with its name."""
+    async def fake_acomplete(request, model, timeout):
+        return _fake_completion(model)
+
+    monkeypatch.setattr(routing, "acomplete", fake_acomplete)
+    monkeypatch.setattr(routing, "cost_of", lambda m, p, c: 0.002)
+
+    resp = await client.post(
+        "/v1/chat/completions",
+        headers={"Authorization": f"Bearer {api_key}"},
+        json={"model": "gpt-4o-mini", "messages": [{"role": "user", "content": "hi"}]},
+    )
+    assert resp.status_code == 200, resp.text
+
+    stats = await client.get(
+        "/api/stats?days=1", headers={"Authorization": "Bearer test-admin"}
+    )
+    assert stats.status_code == 200
+    by_key = stats.json()["by_key"]
+    assert by_key, "expected at least one key bucket"
+    top = by_key[0]
+    # The fixture creates a key named "test"; spend must be attributed to it by name.
+    assert top["name"] == "test"
+    assert top["requests"] >= 1
+    assert top["cost_usd"] >= 0.002
+
+
 async def test_fallback_to_second_model(client, api_key, monkeypatch):
     calls = []
 
