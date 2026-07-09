@@ -1,9 +1,11 @@
 """Request orchestration: retries, fallback chain, cost calc, and usage logging.
 
 Policy: for each candidate model we retry on transient errors up to
-``max_retries``; on persistent failure we fall back to the next candidate
-(request ``fallback_models`` appended after the primary). Streaming commits to a
-provider only once its first chunk arrives, so fallback still works pre-stream.
+``max_retries``; on persistent failure we fall back to the next candidate.
+Candidates = the primary model plus the request's ``fallback_models``, or — when
+the client sends none — the server-side ``FALLBACK_CHAINS`` default for that
+model. Streaming commits to a provider only once its first chunk arrives, so
+fallback still works pre-stream.
 """
 from __future__ import annotations
 
@@ -38,10 +40,34 @@ def _status_of(exc: Exception) -> int:
     return code if isinstance(code, int) else 502
 
 
-def _candidates(request: ChatCompletionRequest) -> list[str]:
+def _candidates(
+    request: ChatCompletionRequest | EmbeddingRequest,
+    settings: Settings,
+    aliases: dict[str, str],
+    *,
+    wildcard: bool = True,
+) -> list[str]:
+    """Primary model + fallbacks, deduped on their normalized form.
+
+    Client-supplied ``fallback_models`` win outright; otherwise the server-side
+    ``FALLBACK_CHAINS`` entry for the normalized primary applies — exact model
+    key first, then the ``provider/*`` wildcard. Embeddings opt out of the
+    wildcard (``wildcard=False``) so a provider-wide chat chain never routes an
+    embedding request to a chat model.
+    """
+    primary = normalize_model(request.model, aliases)
+    fallbacks = list(request.fallback_models or [])
+    if not fallbacks:
+        chains = settings.fallback_chain_map
+        fallbacks = list(chains.get(primary) or [])
+        if not fallbacks and wildcard:
+            fallbacks = list(chains.get(f"{provider_of(primary)}/*") or [])
     models = [request.model]
-    for m in request.fallback_models or []:
-        if m not in models:
+    seen = {primary}
+    for m in fallbacks:
+        normalized = normalize_model(m, aliases)
+        if normalized not in seen:
+            seen.add(normalized)
             models.append(m)
     return models
 
@@ -70,7 +96,7 @@ async def run_complete(
     attempts = 0
     last_exc: Exception | None = None
 
-    for raw_model in _candidates(request):
+    for raw_model in _candidates(request, settings, aliases):
         model = normalize_model(raw_model, aliases)
         for attempt in range(settings.max_retries + 1):
             attempts += 1
@@ -142,7 +168,7 @@ async def open_stream(
     attempts = 0
     last_exc: Exception | None = None
 
-    for raw_model in _candidates(request):
+    for raw_model in _candidates(request, settings, aliases):
         model = normalize_model(raw_model, aliases)
         for attempt in range(settings.max_retries + 1):
             attempts += 1
@@ -229,7 +255,7 @@ async def run_embed(
     attempts = 0
     last_exc: Exception | None = None
 
-    for raw_model in _candidates(request):
+    for raw_model in _candidates(request, settings, aliases, wildcard=False):
         model = normalize_model(raw_model, aliases)
         for attempt in range(settings.max_retries + 1):
             attempts += 1

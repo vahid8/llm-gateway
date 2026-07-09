@@ -165,6 +165,7 @@ All via env / `.env` (see `.env.example`):
 | `MONTHLY_BUDGET_USD` | `0` | Default per-key monthly USD spend cap (0 = unlimited) |
 | `CORS_ORIGINS` | `*` | Comma-separated allowlist (lock down in prod) |
 | `MODEL_ALIASES` | `{}` | JSON map of friendly name → litellm model |
+| `FALLBACK_CHAINS` | `{}` | JSON map of model (or `provider/*`) → default fallback model(s), used when a request has no `fallback_models` |
 
 ## API
 

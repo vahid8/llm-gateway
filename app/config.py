@@ -76,6 +76,14 @@ class Settings(BaseSettings):
     # MODEL_ALIASES='{"fast":"gemini/gemini-1.5-flash","smart":"anthropic/claude-sonnet-4-20250514"}'
     model_aliases: str = "{}"
 
+    # Optional JSON map of server-side default fallback chains, used when a
+    # request carries no fallback_models of its own. Keys are normalized model
+    # names ("anthropic/claude-haiku-4-5") or a provider wildcard
+    # ("anthropic/*"); values are one model name or a list to try in order.
+    # An exact model entry wins over the provider wildcard. E.g.
+    # FALLBACK_CHAINS='{"anthropic/*":["gemini/gemini-2.5-flash"]}'
+    fallback_chains: str = "{}"
+
     @model_validator(mode="after")
     def _load_key_files(self) -> Settings:
         """Read any `*_api_key_file` into the matching `*_api_key`.
@@ -108,6 +116,31 @@ class Settings(BaseSettings):
             return data if isinstance(data, dict) else {}
         except (json.JSONDecodeError, TypeError):
             return {}
+
+    @property
+    def fallback_chain_map(self) -> dict[str, list[str]]:
+        """Parsed FALLBACK_CHAINS; malformed input degrades to no chains.
+
+        A bare-string value is coerced to a one-element chain; non-string
+        entries inside a list are dropped.
+        """
+        try:
+            data = json.loads(self.fallback_chains)
+        except (json.JSONDecodeError, TypeError):
+            return {}
+        if not isinstance(data, dict):
+            return {}
+        chains: dict[str, list[str]] = {}
+        for key, value in data.items():
+            if not isinstance(key, str) or not key:
+                continue
+            if isinstance(value, str):
+                value = [value]
+            if isinstance(value, list):
+                models = [m for m in value if isinstance(m, str) and m]
+                if models:
+                    chains[key] = models
+        return chains
 
 
 @lru_cache
