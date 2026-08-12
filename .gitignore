@@ -15,6 +15,18 @@ wheels/
 
 # Local secrets & data
 .env
+# 🔴 `.env` alone is not enough. This repo is PUBLIC, and the production
+# gateway on the blog server deploys from it, so its working tree accumulates
+# operational files beside the code. On 2026-08-12 that tree held four
+# untracked `.env.bak-before-*` files — three of them containing live provider
+# keys — none matched by `.env`, so a single `git add -A` would have published
+# them. Backups now live outside the tree, and these patterns are the net.
+.env.*
+!.env.example
+!.env.template
+*.bak-*
+*.bak
+docker-compose.deploy.yml
 *.db
 gateway.db
 # Docker-secret source files (the dir is kept via secrets/.gitignore)
